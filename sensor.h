@@ -1,31 +1,28 @@
-#include "Sensor.h"
+#pragma once
+#include <Arduino.h>
 
-// Konstruktør – settes opp når objektet lages
-Sensor::Sensor(int pin, String name)
-    : pin(pin), name(name) {
-  pinMode(pin, INPUT);
-}
+// En enkel struktur for å holde måledata
+struct SensorData {
+  int rawValue;     // Rå analogverdi (0–1023)
+  float voltage;    // Omregnet til volt
+};
 
-// Leser analogverdi og konverterer til volt
-SensorData Sensor::read() {
-  SensorData data;
-  data.rawValue = analogRead(pin);
-  data.voltage = (data.rawValue / 1023.0) * 5.0; // antar 5V referanse
-  return data;
-}
+// En klasse som representerer en sensor koblet til en analog pin
+class Sensor {
+private:
+  int pin;          // hvilken pin sensoren er koblet til
+  String name;      // navn for identifikasjon
 
-// Skriver sensorens status til Serial Monitor
-void Sensor::printInfo() {
-  SensorData data = read();
-  Serial.print(name);
-  Serial.print(": ");
-  Serial.print(data.rawValue);
-  Serial.print(" -> ");
-  Serial.print(data.voltage, 2);
-  Serial.println(" V");
-}
+public:
+  // Konstruktør
+  Sensor(int pin, String name);
 
-// Returnerer sensorens navn
-String Sensor::getName() {
-  return name;
-}
+  // Leser verdier fra sensoren og returnerer struktur
+  SensorData read();
+
+  // Skriver info til seriell monitor
+  void printInfo();
+
+  // Henter navnet på sensoren
+  String getName();
+};

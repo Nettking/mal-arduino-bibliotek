@@ -28,6 +28,9 @@
 #include <Wire.h>
 #include <ENS160Sensor.h>
 
+constexpr float STANDARD_TEMPERATUR_C = 22.0f;
+constexpr float STANDARD_LUFTFUKTIGHET_PROSENT = 45.0f;
+
 ENS160Sensor luftkvalitet(Wire);
 
 void setup() {
@@ -36,9 +39,11 @@ void setup() {
     ;
   }
   luftkvalitet.begin();
+  luftkvalitet.setAmbientConditions(STANDARD_TEMPERATUR_C, STANDARD_LUFTFUKTIGHET_PROSENT);
 }
 
 void loop() {
+  luftkvalitet.setAmbientConditions(STANDARD_TEMPERATUR_C, STANDARD_LUFTFUKTIGHET_PROSENT);
   luftkvalitet.read();
 
   Serial.print("AQI fra objektet: ");
@@ -48,6 +53,9 @@ void loop() {
 }
 ```
 Kjør eksempelet med seriellmonitoren åpen for å se både sanntidsutskrift fra `read()` og den bufrede AQI-verdien fra objektet.
+
+Bruk `setAmbientConditions()` for å gi ENS160 referanseverdier for temperatur og relativ luftfuktighet. Dette gjør at sensoren
+kan kompensere målingene sine dersom du kombinerer den med for eksempel en BME280 eller andre klimamoduler.
 
 ## 🔌 Tilkobling
 - I²C-adresse `0x52` (fast for ENS160).

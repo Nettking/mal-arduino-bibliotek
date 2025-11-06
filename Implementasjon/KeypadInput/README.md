@@ -20,19 +20,13 @@
 | --- | --- | --- |
 | `src/KeypadInput.h` | Header | Definerer tastaturklassen med dynamisk lagring av rad- og kolonnepinner. |
 | `src/KeypadInput.cpp` | Implementasjon | Initialiserer `Keypad`-objektet og skriver tastetrykk til seriellmonitor. |
-| `examples/Keypad_AccessControl/Keypad_AccessControl.ino` | Eksempel | Kombinerer tastatur og RFID for enkel tilgangskontroll. |
+| `examples/Keypad_AccessControl/Keypad_AccessControl.ino` | Eksempel | Viser enkel PIN-basert tilgang uten ekstra sensorer. |
 
 ## 🧠 Bruk
 ```cpp
 #include <Arduino.h>
-#include <SPI.h>
-#include <RFIDReader.h>
 #include <KeypadInput.h>
-
-// Oppsett for RFID
-constexpr uint8_t RFID_SS_PIN = 10;
-constexpr uint8_t RFID_RST_PIN = 9;
-byte autorisertUID[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+#include <string.h>
 
 // Oppsett for tastatur (4x4 numerisk)
 const byte ANTALL_RADER = 4;
@@ -47,77 +41,94 @@ const byte RAD_PINNER[ANTALL_RADER] = {2, 3, 4, 5};
 const byte KOLONNE_PINNER[ANTALL_KOLONNER] = {6, 7, 8, A1};
 
 KeypadInput tastatur(RAD_PINNER, KOLONNE_PINNER, ANTALL_RADER, ANTALL_KOLONNER, KEYMAP);
-RFIDReader rfid(RFID_SS_PIN, RFID_RST_PIN);
+
+template <size_t PIN_LENGDE>
+class PinTilgangskontroll {
+  public:
+    PinTilgangskontroll(KeypadInput& keypad, const char (&riktigPin)[PIN_LENGDE])
+      : _tastatur(keypad) {
+      static_assert(PIN_LENGDE > 1, "PIN-koden må inneholde minst ett tegn");
+      memcpy(_riktigPin, riktigPin, PIN_LENGDE);
+      nullstillInndata();
+    }
+
+    void begin() { _tastatur.begin(); }
+
+    void oppdater() {
+      _tastatur.read();
+      const char tast = _tastatur.getKey();
+      if (tast) {
+        behandleTast(tast);
+      }
+    }
+
+  private:
+    KeypadInput& _tastatur;
+    char _riktigPin[PIN_LENGDE];
+    char _inndata[PIN_LENGDE];
+    byte _indeks = 0;
+
+    void nullstillInndata() {
+      _indeks = 0;
+      memset(_inndata, 0, sizeof(_inndata));
+    }
+
+    void behandleTast(char tast) {
+      if (tast == '*') {
+        nullstillInndata();
+        Serial.println("PIN tilbakestilt.");
+      } else if (tast == '#') {
+        if (strcmp(_inndata, _riktigPin) == 0) {
+          Serial.println("Tilgang gitt – riktig PIN!");
+        } else {
+          Serial.println("Feil PIN. Prøv igjen.");
+        }
+        nullstillInndata();
+      } else if (_indeks < PIN_LENGDE - 1) {
+        _inndata[_indeks++] = tast;
+        Serial.print("Tast registrert (");
+        Serial.print(_indeks);
+        Serial.println(" sifre lagret)");
+      } else {
+        Serial.println("PIN er full. Trykk # for å bekrefte eller * for å slette.");
+      }
+    }
+};
 
 // Enkel PIN-kode for demo
-const char KODE[5] = {'1', '2', '3', '4', '\0'};
-char inndata[5] = {'\0'};
-byte indeks = 0;
+const char RIKTIG_PIN[] = "1234";
+PinTilgangskontroll<sizeof(RIKTIG_PIN)> tilgangskontroll(tastatur, RIKTIG_PIN);
 
 void setup() {
   Serial.begin(9600);
   while (!Serial) {
     ;
   }
-  Serial.println("Tilgangskontroll: legg kortet på leseren og tast PIN.");
+  Serial.println("Taste inn PIN-kode. Bruk * for å slette, # for å bekrefte.");
 
-  rfid.begin();
-  tastatur.begin();
+  tilgangskontroll.begin();
 }
 
 void loop() {
-  rfid.read();
-  tastatur.read();
-
-  char tast = tastatur.getKey();
-  if (tast) {
-    if (tast == '*') {
-      indeks = 0;
-      memset(inndata, 0, sizeof(inndata));
-      Serial.println("PIN tilbakestilt.");
-    } else if (tast == '#') {
-      if (strcmp(inndata, KODE) == 0) {
-        byte uidBuffer[10];
-        byte uidLength = 0;
-        if (rfid.getUIDBytes(uidBuffer, sizeof(uidBuffer), uidLength) &&
-            uidLength == sizeof(autorisertUID) &&
-            memcmp(uidBuffer, autorisertUID, uidLength) == 0) {
-          Serial.println("Tilgang gitt – korrekt kort og kode!");
-        } else {
-          Serial.println("Kort ikke autorisert eller ikke tilstede.");
-        }
-      } else {
-        Serial.println("Feil PIN. Prøv igjen.");
-      }
-      indeks = 0;
-      memset(inndata, 0, sizeof(inndata));
-    } else if (indeks < sizeof(inndata) - 1) {
-      inndata[indeks++] = tast;
-      Serial.print("Tast registrert (\\*");
-      Serial.print(indeks);
-      Serial.println(" sifre lagret)");
-    }
-  }
-
+  tilgangskontroll.oppdater();
   delay(100);
 }
 ```
-Programmet gir både auditiv (seriell) og taktil feedback. Stjerne sletter inndata, #-tasten validerer mot PIN og RFID-kortet.
+Programmet gir enkel seriell feedback. Stjerne sletter inndata, #-tasten validerer mot PIN-koden.
 
 ## 🔌 Tilkobling
 - Radpinner: 2, 3, 4, 5.
 - Kolonnepinner: 6, 7, 8, A1.
 - Tastaturet krever ingen ekstra motstander; koble en radpinne og kolonnepinne til hver tast.
-- Eksempelet viser også hvordan tastatur og RFID-leser kan dele prosjektet.
+- Eksempelet demonstrerer enkel PIN-verifisering uten eksterne sensorer.
 
 ## 🧱 Avhengigheter
 - Arduino core (`Arduino.h`)
 - `BaseSensor`-biblioteket
 - `Keypad`-biblioteket
-- (I eksempelet) `RFIDReader` og `SPI`
 
 ## 👩‍🏫 For undervisning
 Temaer som kan belyses:
 - Matriseskanning og hvordan `Keypad`-biblioteket forenkler logikken.
-- Kombinasjon av flere sensorer/inn-enheter i ett system.
+- Enkel autorisasjon basert på tastaturet alene.
 - Objektorientert design hvor tastaturet oppfører seg som en sensor gjennom `BaseSensor`.

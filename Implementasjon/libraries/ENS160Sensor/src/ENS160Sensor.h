@@ -11,6 +11,7 @@ class ENS160Sensor : public BaseSensor {
     ENS160Sensor(TwoWire& wirePort = Wire);
     void begin() override;
     void read() override;
+    void setAmbientConditions(float temperatureC, float humidityPercent);
 
     uint8_t airQualityIndex() const { return _aqi; }
     uint16_t CO2eq() const { return _eco2; }

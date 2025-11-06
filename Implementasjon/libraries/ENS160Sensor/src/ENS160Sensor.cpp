@@ -37,3 +37,12 @@ void ENS160Sensor::read() {
   Serial.print(_eco2);
   Serial.println(" ppm");
 }
+
+void ENS160Sensor::setAmbientConditions(float temperatureC, float humidityPercent) {
+  if (!_initialized) {
+    Serial.println("[ENS160] Kan ikke sette miljødata før begin() er fullført.");
+    return;
+  }
+
+  _ens.setTempAndHum(temperatureC, humidityPercent);
+}

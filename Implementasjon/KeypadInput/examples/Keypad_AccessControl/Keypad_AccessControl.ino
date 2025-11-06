@@ -1,12 +1,6 @@
 #include <Arduino.h>
-#include <SPI.h>
-#include <RFIDReader.h>
 #include <KeypadInput.h>
-
-// Oppsett for RFID
-constexpr uint8_t RFID_SS_PIN = 10;
-constexpr uint8_t RFID_RST_PIN = 9;
-byte autorisertUID[4] = {0xDE, 0xAD, 0xBE, 0xEF};
+#include <string.h>
 
 // Oppsett for tastatur (4x4 numerisk)
 const byte ANTALL_RADER = 4;
@@ -21,57 +15,116 @@ const byte RAD_PINNER[ANTALL_RADER] = {2, 3, 4, 5};
 const byte KOLONNE_PINNER[ANTALL_KOLONNER] = {6, 7, 8, A1};
 
 KeypadInput tastatur(RAD_PINNER, KOLONNE_PINNER, ANTALL_RADER, ANTALL_KOLONNER, KEYMAP);
-RFIDReader rfid(RFID_SS_PIN, RFID_RST_PIN);
+
+struct PinMeldinger {
+  const char* tilbakestilt;
+  const char* riktigPin;
+  const char* feilPin;
+  const char* pinFull;
+  const char* tastRegistrertPrefix;
+  const char* tastRegistrertSuffix;
+};
+
+template <size_t PIN_LENGDE>
+class PinTilgangskontroll {
+  public:
+    PinTilgangskontroll(KeypadInput& keypad,
+                        Print& ut,
+                        const char (&riktigPin)[PIN_LENGDE],
+                        const PinMeldinger& meldinger)
+      : _tastatur(keypad),
+        _ut(ut),
+        _meldinger(meldinger) {
+      static_assert(PIN_LENGDE > 1, "PIN-koden må inneholde minst ett tegn");
+      memcpy(_riktigPin, riktigPin, PIN_LENGDE);
+      nullstillInndata();
+    }
+
+    void begin() {
+      _tastatur.begin();
+    }
+
+    void oppdater() {
+      _tastatur.read();
+      const char tast = _tastatur.getKey();
+      if (tast) {
+        behandleTast(tast);
+      }
+    }
+
+  private:
+    KeypadInput& _tastatur;
+    Print& _ut;
+    const PinMeldinger& _meldinger;
+    char _riktigPin[PIN_LENGDE];
+    char _inndata[PIN_LENGDE];
+    byte _indeks = 0;
+
+    void nullstillInndata() {
+      _indeks = 0;
+      memset(_inndata, 0, sizeof(_inndata));
+    }
+
+    void behandleTast(char tast) {
+      if (tast == '*') {
+        tilbakestill();
+      } else if (tast == '#') {
+        bekreftPin();
+      } else {
+        leggTilSiffer(tast);
+      }
+    }
+
+    void tilbakestill() {
+      nullstillInndata();
+      _ut.println(_meldinger.tilbakestilt);
+    }
+
+    void bekreftPin() {
+      if (strcmp(_inndata, _riktigPin) == 0) {
+        _ut.println(_meldinger.riktigPin);
+      } else {
+        _ut.println(_meldinger.feilPin);
+      }
+      nullstillInndata();
+    }
+
+    void leggTilSiffer(char tast) {
+      if (_indeks < PIN_LENGDE - 1) {
+        _inndata[_indeks++] = tast;
+        _ut.print(_meldinger.tastRegistrertPrefix);
+        _ut.print(_indeks);
+        _ut.println(_meldinger.tastRegistrertSuffix);
+      } else {
+        _ut.println(_meldinger.pinFull);
+      }
+    }
+};
 
 // Enkel PIN-kode for demo
-const char KODE[5] = {'1', '2', '3', '4', '\0'};
-char inndata[5] = {'\0'};
-byte indeks = 0;
+const char RIKTIG_PIN[] = "1234";
+const PinMeldinger STANDARD_MELDINGER = {
+  "PIN tilbakestilt.",
+  "Tilgang gitt – riktig PIN!",
+  "Feil PIN. Prøv igjen.",
+  "PIN er full. Trykk # for å bekrefte eller * for å slette.",
+  "Tast registrert (",
+  " sifre lagret)"
+};
+
+PinTilgangskontroll<sizeof(RIKTIG_PIN)> tilgangskontroll(tastatur, Serial, RIKTIG_PIN, STANDARD_MELDINGER);
 
 void setup() {
   Serial.begin(9600);
   while (!Serial) {
     ;
   }
-  Serial.println("Tilgangskontroll: legg kortet på leseren og tast PIN.");
+  Serial.println("Taste inn PIN-kode. Bruk * for å slette, # for å bekrefte.");
 
-  rfid.begin();
-  tastatur.begin();
+  tilgangskontroll.begin();
 }
 
 void loop() {
-  rfid.read();
-  tastatur.read();
-
-  char tast = tastatur.getKey();
-  if (tast) {
-    if (tast == '*') {
-      indeks = 0;
-      memset(inndata, 0, sizeof(inndata));
-      Serial.println("PIN tilbakestilt.");
-    } else if (tast == '#') {
-      if (strcmp(inndata, KODE) == 0) {
-        byte uidBuffer[10];
-        byte uidLength = 0;
-        if (rfid.getUIDBytes(uidBuffer, sizeof(uidBuffer), uidLength) &&
-            uidLength == sizeof(autorisertUID) &&
-            memcmp(uidBuffer, autorisertUID, uidLength) == 0) {
-          Serial.println("Tilgang gitt – korrekt kort og kode!");
-        } else {
-          Serial.println("Kort ikke autorisert eller ikke tilstede.");
-        }
-      } else {
-        Serial.println("Feil PIN. Prøv igjen.");
-      }
-      indeks = 0;
-      memset(inndata, 0, sizeof(inndata));
-    } else if (indeks < sizeof(inndata) - 1) {
-      inndata[indeks++] = tast;
-      Serial.print("Tast registrert (\*");
-      Serial.print(indeks);
-      Serial.println(" sifre lagret)");
-    }
-  }
-
+  tilgangskontroll.oppdater();
   delay(100);
 }
